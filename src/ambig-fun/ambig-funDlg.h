@@ -16,6 +16,8 @@ class CAmbigFunDlg : public CSimulationDialog
 public:
     CAmbigFunDlg(CWnd* pParent = NULL);    // standard constructor
 
+    enum mode_t { MODE_DEMO, MODE_SIM };
+
 // Dialog Data
     enum { IDD = IDD_AMBIGFUN_DIALOG };
 
@@ -35,11 +37,21 @@ protected:
 	CPlotControl m_cSignalsPlot;
 	CPlotControl m_cSignalsShiftedPlot;
 	CPlotControl m_cCorrelationPlot;
+	CPlotControl m_cQualityPlot;
 	model::model_data m_data;
+    mode_t m_mode;
+    model::cancellation_token m_ct;
 public:
     CButton m_cDisplayType;
     afx_msg void OnBnClickedButton1();
     afx_msg void OnBnClickedButton2();
     afx_msg void OnBnClickedButton3();
     virtual void OnSimulation();
+    void OnDemo();
+    void OnSim();
+    afx_msg void OnBnClickedRadio1();
+    afx_msg void OnBnClickedRadio2();
+    afx_msg void OnBnClickedRadio3();
+    void SetupPlots(bool am, bool pm, bool fm);
+    virtual BOOL DestroyWindow();
 };
