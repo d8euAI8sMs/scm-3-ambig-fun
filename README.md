@@ -6,6 +6,8 @@ Part of [d8euAI8sMs](https://github.com/d8euAI8sMs) namespace. See [`learning` r
 
 Signal time delay detection in case of doppler effect using the ambuguity function.
 
+![](ui.png)
+
 ## Status and Artifacts
 
 | pdf report | project |
