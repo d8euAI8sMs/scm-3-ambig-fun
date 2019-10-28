@@ -26,6 +26,7 @@ void CAmbigFunDlg::DoDataExchange(CDataExchange* pDX)
     DDX_Control(pDX, IDC_PLOT2, m_cSignalsShiftedPlot);
     DDX_Control(pDX, IDC_PLOT5, m_cCorrelationPlot);
     DDX_Control(pDX, IDC_PLOT3, m_cQualityPlot);
+    DDX_Control(pDX, IDC_PLOT4, m_cAmbigfunPlot);
     DDX_Control(pDX, IDC_RADIO1, m_cDisplayType);
 	DDX_Text(pDX, IDC_EDIT1, m_data.params->carrier);
 	DDX_Text(pDX, IDC_EDIT2, m_data.params->sampling_rate);
@@ -37,10 +38,13 @@ void CAmbigFunDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Text(pDX, IDC_EDIT8, m_data.params->dopp_from);
 	DDX_Text(pDX, IDC_EDIT9, m_data.params->dopp_to);
 	DDX_Text(pDX, IDC_EDIT10, m_data.params->dopp_count);
-	DDX_Text(pDX, IDC_EDIT11, m_data.params->tau_from);
-	DDX_Text(pDX, IDC_EDIT12, m_data.params->tau_to);
-	DDX_Text(pDX, IDC_EDIT13, m_data.params->tau_count);
 	DDX_Text(pDX, IDC_EDIT14, m_data.params->num_of_tests);
+	DDX_Control(pDX, IDC_EDIT15, m_tfTau.am);
+    DDX_Control(pDX, IDC_EDIT17, m_tfTau.pm);
+    DDX_Control(pDX, IDC_EDIT19, m_tfTau.fm);
+	DDX_Control(pDX, IDC_EDIT16, m_tfDopp.am);
+    DDX_Control(pDX, IDC_EDIT18, m_tfDopp.pm);
+    DDX_Control(pDX, IDC_EDIT20, m_tfDopp.fm);
 }
 
 BEGIN_MESSAGE_MAP(CAmbigFunDlg, CSimulationDialog)
@@ -106,6 +110,18 @@ BOOL CAmbigFunDlg::OnInitDialog()
 	m_cSignalsShiftedPlot.triple_buffered = true;
 	m_cCorrelationPlot.triple_buffered = true;
 	m_cQualityPlot.triple_buffered = true;
+
+    m_cAmbigfunPlot.points = m_data.ambigfun.grid;
+    m_cAmbigfunPlot.values = {{
+            m_data.ambigfun.mat.am,
+            m_data.ambigfun.mat.pm,
+            m_data.ambigfun.mat.fm
+    }};
+    m_cAmbigfunPlot.accents = {{
+            RGB(255, 0, 0),
+            RGB(0, 155, 0),
+            RGB(0, 0, 255)
+    }};
 
     m_cDisplayType.SetCheck(1);
 
@@ -225,6 +241,23 @@ void CAmbigFunDlg::OnDemo()
 
 void CAmbigFunDlg::OnSim()
 {
+    model::signals_pair r;
+    model::gen_signals(r, *m_data.params, model::from_params(*m_data.params));
+    model::fill_signals(m_data, r);
+
+    model::signals2d_t af;
+    auto stats = model::abmigfun(r, af, *m_data.params, m_ct, [&] () {
+        model::fill_af(m_data, af);
+        m_cAmbigfunPlot.RedrawWindow();
+    });
+
+    CString fmt;
+    fmt.Format(_T("%f"), stats.am.first); m_tfTau.am.SetWindowText(fmt);
+    fmt.Format(_T("%f"), stats.pm.first); m_tfTau.pm.SetWindowText(fmt);
+    fmt.Format(_T("%f"), stats.fm.first); m_tfTau.fm.SetWindowText(fmt);
+    fmt.Format(_T("%f"), stats.am.second); m_tfDopp.am.SetWindowText(fmt);
+    fmt.Format(_T("%f"), stats.pm.second); m_tfDopp.pm.SetWindowText(fmt);
+    fmt.Format(_T("%f"), stats.fm.second); m_tfDopp.fm.SetWindowText(fmt);
 }
 
 
@@ -246,17 +279,21 @@ void CAmbigFunDlg::SetupPlots(bool am, bool pm, bool fm)
     m_data.correlation.pm.plot->visible = pm;
     m_data.correlation.fm.plot->visible = fm;
 
+    size_t visible_idx = am ? 0 : pm ? 1 : fm ? 2 : 0;
+
     m_cSignalsPlot.RedrawBuffer();
     m_cSignalsPlot.SwapBuffers();
     m_cSignalsShiftedPlot.RedrawBuffer();
     m_cSignalsShiftedPlot.SwapBuffers();
     m_cCorrelationPlot.RedrawBuffer();
     m_cCorrelationPlot.SwapBuffers();
+    m_cAmbigfunPlot.visible_layer = visible_idx;
 
     Invoke([this] () {
         m_cSignalsPlot.RedrawWindow();
         m_cSignalsShiftedPlot.RedrawWindow();
         m_cCorrelationPlot.RedrawWindow();
+        m_cAmbigfunPlot.RedrawWindow();
     });
 }
 

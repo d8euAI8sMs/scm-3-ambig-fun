@@ -35,7 +35,6 @@ namespace model
 		double tau; // 0..1
 		double doppler;
 		double snr;
-		double tau_from, tau_to; size_t tau_count;
         double dopp_from, dopp_to; size_t dopp_count;
 		int num_of_tests;
 	};
@@ -51,7 +50,6 @@ namespace model
             0.5,
             100.0,
 			-10,
-			0.0, 0.5, 20,
 			0.0, 200.0, 20,
 			10
 		};
@@ -101,7 +99,14 @@ namespace model
 
     using signals_t = sigtuple_t < signal_t > ;
 
+    struct signals2d_t {
+        std::vector < std::vector < geom::point2d_t > > grid;
+        sigtuple_t < std::vector < std::vector < double > > > mat;
+    };
+
     using stats_t = sigtuple_t < double > ;
+
+    using dstats_t = sigtuple_t < std::pair < double, double > > ;
 
     struct signals_pair
     {
@@ -382,11 +387,94 @@ namespace model
         }
     }
 
+    inline dstats_t abmigfun
+    (
+        const signals_pair & s,
+        signals2d_t & r,
+        const parameters & p,
+        ct_t ct,
+        const std::function < void() > & cb
+    )
+    {
+        signals_t c;
+
+        double ddopp = (p.dopp_to - p.dopp_from) / p.dopp_count;
+
+        r.grid.resize(p.dopp_count);
+        r.mat.am.resize(p.dopp_count);
+        r.mat.pm.resize(p.dopp_count);
+        r.mat.fm.resize(p.dopp_count);
+        for (size_t i = 0; i < p.dopp_count; ++i)
+        {
+            r.grid[i].clear(); r.grid[i].resize(s.base.am.size());
+            r.mat.am[i].clear(); r.mat.am[i].resize(s.base.am.size());
+            r.mat.pm[i].clear(); r.mat.pm[i].resize(s.base.am.size());
+            r.mat.fm[i].clear(); r.mat.fm[i].resize(s.base.am.size());
+        }
+
+        double am_max = 0, pm_max = 0, fm_max = 0;
+        double am_dopp = 0, pm_dopp = 0, fm_dopp = 0;
+        double am_tau = 0, pm_tau = 0, fm_tau = 0;
+        double tau_max = 0;
+
+        for (size_t i = 0; i < p.dopp_count; ++i)
+        {
+            if (ct) break;
+
+            double dopp = p.dopp_from + ddopp * i;
+
+            if (ct) break;
+
+            correlate(s, c, dopp, false, ct);
+
+            for (int j = 0; j < (int)s.base.am.size(); ++j)
+            {
+                r.grid[i][j] = { dopp, c.am[j].x };
+                r.mat.am[i][j] = c.am[j].y.re;
+                r.mat.pm[i][j] = c.pm[j].y.re;
+                r.mat.fm[i][j] = c.fm[j].y.re;
+
+                tau_max = std::fmax(tau_max, c.am[j].x);
+
+                if (am_max < r.mat.am[i][j])
+                {
+                    am_max = r.mat.am[i][j];
+                    am_dopp = dopp;
+                    am_tau = c.am[j].x;
+                }
+                if (pm_max < r.mat.pm[i][j])
+                {
+                    pm_max = r.mat.pm[i][j];
+                    pm_dopp = dopp;
+                    pm_tau = c.pm[j].x;
+                }
+                if (fm_max < r.mat.fm[i][j])
+                {
+                    fm_max = r.mat.fm[i][j];
+                    fm_dopp = dopp;
+                    fm_tau = c.fm[j].x;
+                }
+            }
+
+            if (ct) break;
+
+            cb();
+        }
+
+        return {
+            { am_tau / tau_max, am_dopp },
+            { pm_tau / tau_max, pm_dopp },
+            { fm_tau / tau_max, fm_dopp }
+        };
+    }
+
     /*****************************************************/
     /*                     drawing                       */
     /*****************************************************/
 	
     using points_t = std::vector < geom::point2d_t > ;
+    using grid_t = std::vector < std::vector < geom::point < double > > > ;
+    using mat_t = std::vector < std::vector < double > > ;
 
     struct plot_data
     {
@@ -397,6 +485,12 @@ namespace model
     struct complex_plot_data
     {
         plot_data re, im;
+    };
+
+    struct plot2d_group_data
+    {
+        std::shared_ptr < grid_t > grid;
+        sigtuple_t < std::shared_ptr < mat_t > > mat;
     };
 
 	struct complex_plot_group_data
@@ -419,6 +513,7 @@ namespace model
 		complex_plot_group_data signals_shifted;
 		single_plot_group_data correlation;
 		single_plot_group_data quality;
+        plot2d_group_data ambigfun;
     };
 
     inline static plot_data make_plot_data
@@ -477,6 +572,16 @@ namespace model
 		return pd;
 	}
 
+	inline static plot2d_group_data make_plot2d_group_data()
+	{
+		plot2d_group_data pd;
+		pd.grid = std::make_shared < grid_t > ();
+        pd.mat.am = std::make_shared < mat_t > ();
+        pd.mat.pm = std::make_shared < mat_t > ();
+        pd.mat.fm = std::make_shared < mat_t > ();
+		return pd;
+	}
+
     template < typename PlotGroupData >
     inline static plot::drawable::ptr_t make_root_drawable
     (
@@ -514,6 +619,7 @@ namespace model
 		md.signals_shifted = make_plot_group_data();
 		md.correlation = make_single_plot_group_data();
 		md.quality = make_single_plot_group_data();
+        md.ambigfun = make_plot2d_group_data();
         return md;
     }
 
@@ -569,5 +675,52 @@ namespace model
         fill_re(md.quality, md.quality.pm, p.pm);
         fill_re(md.quality, md.quality.fm, p.fm);
         md.quality.autoworld->flush();
+    }
+
+    inline void fill_af(model_data & md, const signals2d_t & p)
+    {
+        double am_max = 0, pm_max = 0, fm_max = 0;
+        double x_min = (std::numeric_limits < double > :: max) ()
+             , x_max = (std::numeric_limits < double > :: lowest) ()
+             , y_min = x_min
+             , y_max = x_max;
+
+        md.ambigfun.grid->resize(p.grid.size());
+        md.ambigfun.mat.am->resize(p.grid.size());
+        md.ambigfun.mat.pm->resize(p.grid.size());
+        md.ambigfun.mat.fm->resize(p.grid.size());
+
+        for (size_t i = 0; i < p.grid.size(); ++i)
+        {
+            md.ambigfun.grid->at(i).resize(p.grid[i].size());
+            md.ambigfun.mat.am->at(i).resize(p.grid[i].size());
+            md.ambigfun.mat.pm->at(i).resize(p.grid[i].size());
+            md.ambigfun.mat.fm->at(i).resize(p.grid[i].size());
+
+            #pragma omp parallel for firstprivate(i)
+            for (int j = 0; j < (int)p.grid[i].size(); ++j)
+            {
+                am_max = std::fmax(am_max, p.mat.am[i][j]);
+                pm_max = std::fmax(pm_max, p.mat.pm[i][j]);
+                fm_max = std::fmax(fm_max, p.mat.fm[i][j]);
+                x_max = std::fmax(x_max, p.grid[i][j].x);
+                y_max = std::fmax(y_max, p.grid[i][j].y);
+                x_min = std::fmin(x_min, p.grid[i][j].x);
+                y_min = std::fmin(y_min, p.grid[i][j].y);
+            }
+        }
+
+        for (size_t i = 0; i < p.grid.size(); ++i)
+        #pragma omp parallel for firstprivate(i)
+        for (int j = 0; j < (int)p.grid[i].size(); ++j)
+        {
+            md.ambigfun.grid->at(i).at(j) = {
+                2 * (p.grid[i][j].x - x_min) / (x_max - x_min) - 1,
+                2 * (p.grid[i][j].y - y_min) / (y_max - y_min) - 1
+            };
+            md.ambigfun.mat.am->at(i).at(j) = p.mat.am[i][j] / am_max;
+            md.ambigfun.mat.pm->at(i).at(j) = p.mat.pm[i][j] / pm_max;
+            md.ambigfun.mat.fm->at(i).at(j) = p.mat.fm[i][j] / fm_max;
+        }
     }
 }

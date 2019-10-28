@@ -7,6 +7,7 @@
 #include <util\common\gui\PlotControl.h>
 
 #include "model.h"
+#include "SurfacePlotControl.h"
 #include "afxwin.h"
 
 // CAmbigFunDlg dialog
@@ -38,9 +39,12 @@ protected:
 	CPlotControl m_cSignalsShiftedPlot;
 	CPlotControl m_cCorrelationPlot;
 	CPlotControl m_cQualityPlot;
+    CSurfacePlotControl m_cAmbigfunPlot;
 	model::model_data m_data;
     mode_t m_mode;
     model::cancellation_token m_ct;
+    model::sigtuple_t < CEdit > m_tfTau;
+    model::sigtuple_t < CEdit > m_tfDopp;
 public:
     CButton m_cDisplayType;
     afx_msg void OnBnClickedButton1();
